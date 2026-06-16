@@ -21,7 +21,7 @@ class Dian115Signin(_PluginBase):
     # 插件描述
     plugin_desc = "癫影站点自动执行每日签到。注：portal_token不需要填portal_token= 只写=后面的内容。"
     # 插件图标 (已转为raw直链以供页面渲染)
-    plugin_icon = "https://raw.githubusercontent.com/jiumian8/MoviePilot-Plugins/main/icons/dian115.png"
+    plugin_icon = "https://github.com/jiumian8/MoviePilot-Plugins/blob/main/icon/dian115.png?raw=true"
     # 插件版本
     plugin_version = "1.0.0"
     # 插件作者
