@@ -1,0 +1,14 @@
+{
+    "IkuaiRouterBackup": {
+        "name": "癫影签到",
+        "description": "癫影签到，定时自动签到",
+        "labels": "签到",
+        "version": "1.1.0",
+        "icon": "https://github.com/jiumian8/MoviePilot-Plugins/blob/main/icon/dian115.png?raw=true",
+        "author": "jiumian",
+        "level": 2,
+        "history": {
+            "v1.0": "初始版本，感谢W佬指点有了此项目"
+        }
+    }
+}
