@@ -301,7 +301,7 @@ class UIConfig:
                                             {'component': 'VChip', 'props': {'color': 'primary', 'variant': 'flat'}, 'text': f'当前账号：{hdhive_account_username}'},
                                             {'component': 'VChip', 'props': {'color': 'success', 'variant': 'flat'}, 'text': f'剩余积分：{hdhive_account_points}'},
                                         ]},
-                                        {'component': 'div', 'props': {'class': 'text-caption mt-2 text-grey'}, 'text': '保存配置或插件启动后自动读取'}
+                                        {'component': 'div', 'props': {'class': 'text-caption mt-2 text-grey'}, 'text': '保存配置或插件启动后自动读取；这里只展示状态，不需要手动输入。'}
                                     ]
                                 }]
                             }]

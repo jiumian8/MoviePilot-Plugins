@@ -29,23 +29,23 @@ from .utils import download_so_file
 lock = Lock()
 
 
-class P115StrgmSub(_PluginBase):
+class P115panjiumian(_PluginBase):
     """115网盘订阅追更插件"""
 
     # 插件名称
-    plugin_name = "115网盘订阅追更-jiumian魔改"
+    plugin_name = "115网盘订阅追更"
     # 插件描述
-    plugin_desc = "修复影巢搜索源(纯API模式)，支持HDHive解锁，支持自定义搜索源优先级"
+    plugin_desc = "结合MoviePilot订阅功能，自动搜索115网盘资源并转存缺失的电影和剧集。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/main/icons/cloud.png"
     # 插件版本
-    plugin_version = "1.1.0"
+    plugin_version = "1.5.3"
     # 插件作者
-    plugin_author = "jiumian"
+    plugin_author = "mrtian2016"
     # 作者主页
-    author_url = "https://github.com/jiumian8"
+    author_url = "https://github.com/mrtian2016"
     # 插件配置项ID前缀
-    plugin_config_prefix = "p115strgmsubjiumian_"
+    plugin_config_prefix = "115panjiumian_"
     plugin_order = 20
     auth_level = 1
 
@@ -61,14 +61,14 @@ class P115StrgmSub(_PluginBase):
 
     _cookies: str = ""
     _pansou_enabled: bool = True
-    _pansou_url: str = "http://192.168.5.5:805/"
+    _pansou_url: str = "https://so.252035.xyz"
     _pansou_username: str = ""
     _pansou_password: str = ""
     _pansou_auth_enabled: bool = False
     _pansou_channels: str = "QukanMovie"
 
-    _save_path: str = "/自动整理/自动整理"
-    _movie_save_path: str = "/自动整理/自动整理"
+    _save_path: str = "/我的接收/MoviePilot/TV"
+    _movie_save_path: str = "/我的接收/MoviePilot/Movie"
     _only_115: bool = True
     # 订阅过滤模式："exclude" 排除模式（处理除勾选外的全部订阅）/ "include" 指定模式（仅处理勾选的订阅）
     _subscribe_filter_mode: str = "exclude"
@@ -91,7 +91,7 @@ class P115StrgmSub(_PluginBase):
     _hdhive_account_points: str = ""
 
     # 是否屏蔽系统订阅（True=已屏蔽系统订阅，False=已恢复系统订阅）
-    _block_system_subscribe: bool = True
+    _block_system_subscribe: bool = False
 
     _max_transfer_per_sync: int = 50
     _batch_size: int = 20
@@ -853,7 +853,7 @@ class P115StrgmSub(_PluginBase):
         if self._cron and self._cron_interval_ge_min_hours(self._cron, self._MIN_INTERVAL_HOURS):
             try:
                 services.append({
-                    "id": "P115StrgmSub",
+                    "id": "P115panjiumian",
                     "name": "115网盘订阅追更服务",
                     "trigger": CronTrigger.from_crontab(self._cron),
                     "func": self.sync_subscribes,
@@ -862,7 +862,7 @@ class P115StrgmSub(_PluginBase):
             except Exception as e:
                 logger.warning(f"Cron 表达式无效：{self._cron}，将回退 interval=8h。错误：{e}")
                 services.append({
-                    "id": "P115StrgmSub",
+                    "id": "P115panjiumian",
                     "name": "115网盘订阅追更服务",
                     "trigger": "interval",
                     "func": self.sync_subscribes,
@@ -870,7 +870,7 @@ class P115StrgmSub(_PluginBase):
                 })
         else:
             services.append({
-                "id": "P115StrgmSub",
+                "id": "P115panjiumian",
                 "name": "115网盘订阅追更服务",
                 "trigger": "interval",
                 "func": self.sync_subscribes,
