@@ -10,9 +10,9 @@ import base64
 import gzip
 import json
 import queue
+import random
 import re
 import secrets
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -25,6 +25,7 @@ import requests
 from app.log import logger
 
 from .hdhive import HDHiveOpenAPIError
+from .hdhive_wasm_py import HDHivePythonSigner, HDHiveWasmUnavailable
 
 
 class HDHiveWebClient:
@@ -49,6 +50,7 @@ class HDHiveWebClient:
         self.password = password or ""
         self.cookie = cookie or ""
         self.timeout = timeout
+        self._user_id = ""
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": self.UA})
         if isinstance(proxy, dict):
@@ -179,8 +181,12 @@ class HDHiveWebClient:
         meta = user.get("user_meta") or {}
         username = user.get("username") or user.get("name") or user.get("email") or ""
         display_name = user.get("display_name") or user.get("nickname") or username
+        user_id = user.get("id")
+        if user_id is not None:
+            self._user_id = str(user_id)
         points = meta.get("points")
         return {
+            "id": str(user_id or ""),
             "username": str(username or ""),
             "display_name": str(display_name or ""),
             "points": points if points is not None else "",
@@ -310,13 +316,26 @@ class HDHiveWebClient:
         return line
 
     def _current_user_id(self) -> str:
+        if self._user_id:
+            return self._user_id
+        try:
+            html = self._request_text("GET", self.BASE_URL + "/manager/account", headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": self.BASE_URL + "/",
+            })
+            user = self._extract_prop(html, "currentUser") or {}
+            if isinstance(user, dict) and user.get("id") is not None:
+                self._user_id = str(user.get("id"))
+                return self._user_id
+        except Exception as e:
+            logger.warning(f"HDHive 获取 currentUser.id 失败，将使用 0 签名: {e}")
         return "0"
 
+
     def _signed_request_json(self, method: str, path: str, referer: Optional[str] = None, body: Any = None) -> Any:
-        signer = Path(__file__).with_name("hdhive_wasm_signer_stdio.js")
         wasm = Path(__file__).with_name("hdh_security_bg.wasm")
-        if not signer.exists() or not wasm.exists():
-            raise HDHiveOpenAPIError("MISSING_SIGNER", "缺少 hdhive_wasm_signer_stdio.js 或 hdh_security_bg.wasm")
+        if not wasm.exists():
+            raise HDHiveOpenAPIError("MISSING_SIGNER", "缺少 hdh_security_bg.wasm")
         method = method.upper()
         body_bytes = b""
         if body is not None:
@@ -328,18 +347,18 @@ class HDHiveWebClient:
                 body_bytes = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
         self._ensure_login()
-        proc = subprocess.Popen(
-            ["node", str(signer), json.dumps({"wasmPath": str(wasm), "userAgent": self.UA, "languages": "zh-CN,zh"})],
-            cwd=str(Path(__file__).resolve().parent),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-        )
         try:
-            init_line = self._readline_with_timeout(proc.stdout, 10, "WASM签名器初始化") if proc.stdout else ""
-            init = json.loads(init_line)
+            signer = HDHivePythonSigner(str(wasm), user_agent=self.UA, languages="zh-CN,zh")
+            init = signer.init()
+        except HDHiveWasmUnavailable as e:
+            raise HDHiveOpenAPIError(
+                "WASMTIME_MISSING",
+                "缺少 Python WASM 运行依赖 wasmtime",
+                f"{e}；请确认 MoviePilot 已根据插件 requirements.txt 安装依赖。"
+            )
+        except Exception as e:
+            raise HDHiveOpenAPIError("SIGNER_INIT_FAILED", "Python WASM 签名器初始化失败", str(e))
+        try:
             handshake_body = json.dumps({
                 "client_pub": init["client_pub"],
                 "ua_fingerprint": init["ua_fingerprint"],
@@ -357,21 +376,13 @@ class HDHiveWebClient:
             cid = hs["data"]["cid"]
             server_pub = hs["data"]["server_pub"]
             split = urllib.parse.urlsplit(path)
-            sign_input = {
-                "cid": cid,
-                "server_pub": server_pub,
-                "method": method,
-                "path": split.path,
-                "ts": int(time.time() * 1000),
-                "nonce": secrets.token_hex(16),
-                "body_b64": base64.b64encode(body_bytes).decode("ascii"),
-                "userId": self._current_user_id(),
-            }
-            if not proc.stdin or not proc.stdout:
-                raise HDHiveOpenAPIError("SIGNER_IO_FAILED", "WASM签名器 IO 不可用")
-            proc.stdin.write(json.dumps(sign_input, separators=(",", ":")) + "\n")
-            proc.stdin.flush()
-            sig = json.loads(self._readline_with_timeout(proc.stdout, 10, "WASM签名结果"))
+            sig = signer.sign_after_handshake(
+                {"cid": cid, "server_pub": server_pub, "kid": hs["data"].get("kid") or 1},
+                method,
+                split.path,
+                body_bytes,
+                self._current_user_id(),
+            )
             headers = {
                 "User-Agent": self.UA,
                 "Accept": "application/json,text/plain,*/*",
@@ -387,21 +398,62 @@ class HDHiveWebClient:
                 data = body_bytes if body is not None else None
                 if body is not None:
                     headers["Content-Type"] = "application/json"
-            resp = self.session.request(method, self.BASE_URL + path, data=data, headers=headers, proxies=self.proxies, timeout=25)
-            try:
-                result = resp.json() if resp.text.strip() else None
-            except Exception:
-                result = {"success": False, "message": resp.text[:500]}
-            if resp.status_code >= 400:
-                raise HDHiveOpenAPIError(str(result.get("code", resp.status_code)), str(result.get("message", "")), str(result.get("description", "")), resp.status_code)
-            return result
-        finally:
-            try:
-                if proc.stdin:
-                    proc.stdin.close()
-                proc.terminate()
-            except Exception:
-                pass
+            for attempt in range(3):
+                resp = self.session.request(method, self.BASE_URL + path, data=data, headers=headers, proxies=self.proxies, timeout=25)
+                try:
+                    result = resp.json() if resp.text.strip() else None
+                except Exception:
+                    result = {"success": False, "message": resp.text[:500]}
+
+                if resp.status_code == 429 or (isinstance(result, dict) and str(result.get("code", "")) == "429"):
+                    base_wait = self._parse_retry_after_seconds(resp, result)
+                    jitter = random.randint(10, 60)
+                    wait_seconds = base_wait + jitter
+                    if attempt >= 2:
+                        raise HDHiveOpenAPIError("429", "频繁操作被暂时限制", f"多次等待后仍被 HDHive 限流，最后一次建议等待 {wait_seconds} 秒后再试", 429)
+                    logger.warning(
+                        f"HDHive signedFetch 触发频率限制，暂停 {wait_seconds} 秒后重试 "
+                        f"(原限制 {base_wait} 秒 + 随机延迟 {jitter} 秒，attempt={attempt + 1}/3)"
+                    )
+                    time.sleep(wait_seconds)
+                    continue
+
+                if resp.status_code >= 400:
+                    if isinstance(result, dict):
+                        raise HDHiveOpenAPIError(str(result.get("code", resp.status_code)), str(result.get("message", "")), str(result.get("description", "")), resp.status_code)
+                    raise HDHiveOpenAPIError(str(resp.status_code), "signedFetch 请求失败", str(result), resp.status_code)
+                return result
+
+            raise HDHiveOpenAPIError("429", "频繁操作被暂时限制", "多次等待后仍被 HDHive 限流，请稍后再试", 429)
+        except HDHiveOpenAPIError:
+            raise
+        except Exception as e:
+            raise HDHiveOpenAPIError("SIGNED_REQUEST_FAILED", "signedFetch 请求失败", str(e))
+
+    @staticmethod
+    def _parse_retry_after_seconds(resp: requests.Response, result: Any) -> int:
+        candidates: List[str] = []
+        retry_after = resp.headers.get("Retry-After") if resp is not None else None
+        if retry_after:
+            candidates.append(str(retry_after))
+        if isinstance(result, dict):
+            for key in ("retry_after", "retryAfter", "retry_after_seconds", "seconds", "description", "message"):
+                value = result.get(key)
+                if value is not None:
+                    candidates.append(str(value))
+        elif result is not None:
+            candidates.append(str(result))
+        for text in candidates:
+            text = text.strip()
+            if text.isdigit():
+                return max(1, int(text))
+            m = re.search(r"(\d+)\s*秒后重试", text)
+            if m:
+                return max(1, int(m.group(1)))
+            m = re.search(r"after\s+(\d+)\s*seconds?", text, re.I)
+            if m:
+                return max(1, int(m.group(1)))
+        return 60
 
     @staticmethod
     def _extract_share_url(data: Any) -> str:

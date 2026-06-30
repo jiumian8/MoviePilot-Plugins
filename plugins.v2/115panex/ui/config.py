@@ -284,6 +284,16 @@ class UIConfig:
                              'content': [{'component': 'VTextField', 'props': {"clearable": True, 'model': 'hdhive_password', 'label': 'HDHive 密码', 'type': 'password', 'placeholder': '可选；优先使用 Cookie'}}]}
                         ]
                     },
+                    # HDHive Cookie 配置
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8},
+                             'content': [{'component': 'VTextField', 'props': {'model': 'hdhive_cookie', 'label': 'HDHive Cookie', 'type': 'password', 'placeholder': '可选；优先使用 Cookie 登录'}}]},
+                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4},
+                             'content': [{'component': 'VAlert', 'props': {'type': 'success', 'variant': 'tonal', 'text': 'HDHive 解锁签名已改为 Python WASM，不需要安装 Node.js'}}]}
+                        ]
+                    },
                     # HDHive 账号信息展示
                     {
                         'component': 'VRow',
@@ -600,7 +610,7 @@ class UIConfig:
                                     'text': '立即搜索',
                                     'events': {
                                         'click': {
-                                            'api': f'/plugin/P115StrgmSub/sync_subscribes?apikey={settings.API_TOKEN}',
+                                            'api': f'/plugin/P115panjiumian/sync_subscribes?apikey={settings.API_TOKEN}',
                                             'method': 'get'
                                         }
                                     }
@@ -615,7 +625,7 @@ class UIConfig:
                                     'text': '清空历史记录',
                                     'events': {
                                         'click': {
-                                            'api': f'/plugin/P115StrgmSub/clear_history?apikey={settings.API_TOKEN}',
+                                            'api': f'/plugin/P115panjiumian/clear_history?apikey={settings.API_TOKEN}',
                                             'method': 'post'
                                         }
                                     }
